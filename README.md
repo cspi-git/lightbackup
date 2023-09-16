@@ -9,7 +9,7 @@ git clone https://github.com/cspi-git/lightbackup
 
 NpmJS:
 ```
-npm i discord-backup simple-aes-256 request-async discord.js@13.3.1 moment lodash
+npm i discord-backup form-data simple-aes-256 axios discord.js@13.3.1 moment lodash
 ```
 
 ## Setup
@@ -25,6 +25,9 @@ Bot help menu:
 ```
 lb.help
 ```
+
+## Thanks to
+Very secure online backup wouldn't be possible without [QuAx](https://qu.ax/).
 
 ## License
 MIT © CSPI
