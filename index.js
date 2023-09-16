@@ -3,9 +3,10 @@
 // Main
 const discordBackup = require("discord-backup")
 const simpleAES256 = require("simple-aes-256")
-const request = require("request-async")
 const discord = require("discord.js")
 const moment = require("moment")
+const fD = require("form-data")
+const axios = require("axios")
 const _ = require("lodash")
 const fs = require("fs")
 
@@ -50,7 +51,7 @@ bot.on("message", async(message)=>{
         .setTitle("LightBackup | Help Menu")
         .addFields(
             { name: "lb.help", value: "Display the help menu" },
-            { name: "lb.backup <webhook> <password>", value: "Backup the server and send the backup file in the provided Discord webhook." },
+            { name: "lb.backup <upload (true/false)> <webhook> <password>", value: "Backup the server and send the backup file in the provided Discord webhook." },
             { name: "lb.load <password>", value: "Decrypt the given backup file with the given password and upload it to the current server (current server channels, roles, etc. will be deleted)." }
         )
         .setColor("RANDOM")
@@ -71,7 +72,7 @@ bot.on("message", async(message)=>{
             await message.author.send("Note: All messages are deleted on load.\nLoading the backup in this server, please wait...")
 
             try{
-                var response = await request(attachment.attachment)
+                var response = await axios(attachment.attachment)
                 response = simpleAES256.decrypt(password, Buffer.from(response.body, "hex")).toString("utf8")
 
                 await discordBackup.load(JSON.parse(response), message.guild, { clearGuildBeforeRestore: true })
@@ -85,10 +86,11 @@ bot.on("message", async(message)=>{
     }else if(messageArgs[0] === "lb.backup"){
         await message.delete()
         if(_.find(lightBackup.debounce, { guildID: message.guild.id, type: "backup" })) return message.channel.send("Please wait for 5 minutes before you can backup again.")
-        if(!messageArgs.length || !messageArgs[2]) return message.channel.send("usage: lb.backup <webhook>")
+        if(!messageArgs.length || !messageArgs[2] || !messageArgs[3]) return message.channel.send("usage: lb.backup <upload (true/false)> <webhook> <password>")
+        if(!["true", "false"].includes(messageArgs[1])) return message.channel.send("Invalid uplodate arg (Should be true or false).")
         debounce(message.guild.id, "backup")
 
-        const password = messageArgs.slice(2).join(" ")
+        const password = messageArgs.slice(3).join(" ")
         if(password.length >= 50) return message.channel.send("Maximum password length is 50.")
         message.channel.send("Making a backup for the server, please wait...")
 
@@ -101,23 +103,28 @@ bot.on("message", async(message)=>{
         })
 
         try{
-            await request.post(messageArgs[1], {
-                formData: {
-                    file: {
-                        value: simpleAES256.encrypt(password, fs.readFileSync(`./temp/${backup.id}.json`)).toString("hex"),
-                        options: {
-                            filename: `${moment().format("l").replace(/\//g, "-")}-${Math.floor(Math.random() * 99999)} ${backup.id}.txt`
-                        }
-                    }
-                },
-                json: true
+            fs.writeFileSync(`./temp/${backup.id}.json`, simpleAES256.encrypt(password, fs.readFileSync(`./temp/${backup.id}.json`)).toString("hex"), "utf8")
+            const formData = new fD()
+            formData.append("files[]", fs.readFileSync(`./temp/${backup.id}.json`, "utf8"), `${moment().format("l").replace(/\//g, "-")}-${Math.floor(Math.random() * 99999)} ${backup.id}.txt`)
+            var response = await axios.post(messageArgs[2], formData, {
+                headers: formData.getHeaders()
             })
+
+            if(messageArgs[1] === "true"){
+                const formData = new fD()
+                formData.append("files[]", fs.readFileSync(`./temp/${backup.id}.json`, "utf8"), `${backup.id.toString()}.json`)
+                var response = await axios.post("https://qu.ax/upload.php", formData, {
+                    headers: formData.getHeaders()
+                })
+    
+                message.channel.send(`Backup file successfully uploaded. ${response.data.files[0].url}`)
+            }
 
             fs.writeFileSync(`./temp/${backup.id}.json`, ".", "utf8")
             fs.rmSync(`./temp/${backup.id}.json`)
-
             message.channel.send("Finished making the backup.")
-        }catch{
+        }catch(err){
+            console.log(err)
             message.channel.send("Unable to backup because the backup is too large or the webhook is invalid.")
         }
     }
